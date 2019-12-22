@@ -1,0 +1,24 @@
+Package: MagnifiedIV
+Type: Package
+Title: Magnified Instrumental Variables Estimator
+Version: 0.1.0
+Date: 2019-12-09
+Authors@R: c(person(given = "Nick", family = "Huntington-Klein", role = c("aut","cre"), email = "nhuntington-klein@fullerton.edu"))
+Description: This package performs a Magnified Instrumental Variables estimate, as in Huntington-Klein (2019) "Instruments with Heterogeneous Effects: Monotonicity, Bias, and Localness." 
+    Magnified Instrumental Variables is an IV estimator that is modified only slightly to allow the effect of the instruments to vary, so as to reduce noise in the small-sample IV bias term. 
+    These methods produce a super-local average treatment effect (SLATE) which weights high-instrument-effect observations more heavily than does regular IV.
+    This can be done by either bringing in a group identifier to interact with the instrumental variable(s), or by estimating heterogeneity in the instrumental variables effect and using that to form a sample weight.
+    The MagnifiedIV package includes support for the GroupSearch and causal forest methods for estimating effect heterogeneity, as described in the original paper. Causal forest estimates use the grf package.
+License: MIT + file LICENSE
+Imports:
+    AER,
+    grf,
+    Formula,
+    broom,
+    stringr
+Suggests: 
+    knitr,
+    rmarkdown
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.0.2
