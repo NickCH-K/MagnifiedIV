@@ -27,7 +27,7 @@
 #' @export
 
 groupCF <- function(formula, data, ngroups = 4L, ...) {
-  if (nrow(data) <= ngroups) {
+  if (nrow(data) < ngroups) {
     stop("Not enough observations to run. You need at least as many observations as groups.")
   }
   if (nrow(data)/ngroups < 5) {

@@ -20,7 +20,7 @@
 #' @param data A data.frame.
 #' @param ngroups Number of groups to split the data into.
 #' @param grouping A string variable indicating either the name of a variable in \code{data} to be used as a grouping (or a vector of names if there's more than one excluded instrument), or \code{'groupCF'} or \code{'groupSearch'} to indicate that causal forest or GroupSearch should be used to create groups, respectively.
-#' @param groupformula If using \code{grouping = 'groupCF'} or \code{grouping = 'groupSearch'}, the formula to pass to those functions as their \code{formula} argument. If there are multiple instruments, instead pass a list of functions, to be used in the same order the excluded instruments are listed in \code{formula}.
+#' @param groupformula If using \code{grouping = 'groupCF'} or \code{grouping = 'groupSearch'}, the formula to pass to those functions as their \code{formula} argument. If there are multiple instruments, instead pass a list of functions, to be used in the same order the excluded instruments are listed in \code{formula}. Note that this does mean that each IV must have a single endogenous variable it is "for" when creating groupings. If you don't want that, you'll have to create groups by some other method.
 #' @param est A string variable equal to \code{'group'}, \code{'weight'}, or \code{'both'} to indicate whether the grouped, weighted, or group-and-weighted version of Magnified IV should be used. Note that weighted versions can only be used with one endogenous variable so there is a defined "first stage".
 #' @param p If using \code{est = 'weight'} or \code{est = 'both'} with \code{grouping = 'groupCF'} or \code{grouping = 'groupSearch'}, weights will be constructed by taking the group effects, generating a first-stage F statistic for each observation as though every observation in the sample had that first-stage effect, and raising that F statistic to the power \code{p}. Set \code{p = 1/4} to get a similar weighting scheme as \code{est = 'group'} does, or \code{p = -1/4} to recover the average treatment effect among compliers (under monotonicity and very good estimates of first-stage treatment effect heterogeneity).
 #' @param ivsubset,ivna.action,ivweights,ivcontrasts Additional options to be passed to \code{AER::ivreg}, corresponding to \code{subset}, \code{subset}, \code{na.action}, etc.. These are all preceded by 'iv' to avoid overlap with same-named options being passed in \code{...}. Note that \code{ivweights} will be ignored if \code{est = 'weight'} or \code{est = 'both'}. \code{ivweights} with \code{est = 'groups'} can be used to implement weighting schemes other than the power-of-an-F-statistic suggested in Huntington-Klein (2019).
@@ -52,7 +52,7 @@
 #'
 #' @export
 
-magnifiedIV <- function(formula, data, ngroups = 4, grouping = 'groupCF', groupformula, est = 'group', p = 1/4, ivsubset = NULL, ivna.action = NULL, ivweights = NULL, ivcontrasts = NULL, silent = FALSE, ...) {
+magnifiedIV <- function(formula, data, ngroups = 4, grouping = 'groupCF', groupformula = NULL, est = 'group', p = 1/4, ivsubset = NULL, ivna.action = getOption("na.action", default = "na.omit"), ivweights = NULL, ivcontrasts = NULL, silent = FALSE, ...) {
   if (nrow(data) <= ngroups) {
     stop("Not enough observations to run. You need at least as many observations as groups.")
   }
@@ -65,8 +65,14 @@ magnifiedIV <- function(formula, data, ngroups = 4, grouping = 'groupCF', groupf
   if (!is.character(grouping)) {
     stop('grouping must be a string.')
   }
-  if (!(grouping %in% c(names(data), 'groupCF', 'groupSearch'))) {
-    stop('grouping must be a variable in data, or "groupCF" or "groupSearch".')
+  if (length(grouping) == 1) {
+    if (!(grouping %in% c(names(data),'groupCF', 'groupSearch'))) {
+      stop('grouping must be a vector of variable names in data, or "groupCF" or "groupSearch".')
+    }
+  } else {
+    if (min(grouping %in% names(data)) == 0) {
+      stop('grouping must be a vector of variable names in data, or "groupCF" or "groupSearch".')
+    }
   }
   if (!is.character(est)) {
     stop('est must be a string.')
@@ -144,14 +150,15 @@ magnifiedIV <- function(formula, data, ngroups = 4, grouping = 'groupCF', groupf
       groupformula <- list(groupformula)
     }
   }
-  if (length(groupformula) != length(exclnames)) {
+  if (length(groupformula) != length(exclnames) & (identical(grouping,'groupCF') | identical(grouping,'groupsearch'))) {
     stop('There must be at exactly one formula in the groupformula list for each excluded instrument.')
   }
   # Go through each instrument and get groupings
   # Create separate dataset so if formula includes . it doesn't include the groups
   data_w_groups <- data
+
   for (ex in 1:length(exclnames)) {
-    if (grouping == 'groupCF') {
+    if (identical(grouping,'groupCF')) {
 
       if (!silent) {
         message(paste0('Starting causal forest at ',Sys.time(),'. This may take a moment.'))
@@ -168,7 +175,7 @@ magnifiedIV <- function(formula, data, ngroups = 4, grouping = 'groupCF', groupf
                                 '.')
       }
       names(data_w_groups)[ncol(data_w_groups)] <- groupname[ex]
-    } else if (grouping == 'groupSearch') {
+    } else if (identical(grouping,'groupSearch')) {
       data_w_groups[,ncol(data_w_groups)+1] <- groupSearch(formula = groupformula[[ex]], data = data, ngroups = ngroups, silent = silent, ...)
         if (length(exclnames) == 1) {
           groupname[ex] <- 'groupSearch.'
@@ -183,7 +190,7 @@ magnifiedIV <- function(formula, data, ngroups = 4, grouping = 'groupCF', groupf
     } else {
       groupname[ex] <- grouping[ex]
       if (!is.factor(data[[groupname[ex]]])) {
-        data_w_groups[[groupname]] <- factor(data_w_groups[[groupname[ex]]])
+        data_w_groups[[groupname[ex]]] <- factor(data_w_groups[[groupname[ex]]])
       }
     }
   }
@@ -288,7 +295,7 @@ magnifiedIV <- function(formula, data, ngroups = 4, grouping = 'groupCF', groupf
 #'
 #' In particular, it calculates (N-K)*Var(x-hat | individual coefficients)/Var(x-hat).
 #'
-#' In Magnified IV this is raised to the power p to be used as a regression weight. This funciton is largely used internally for \code{magnifiedIV()} but it is exported here for use in case you'd like to use it to create your own weights. It is perhaps not as user-friendly as it could be, but it is largely an internal function.
+#' In Magnified IV this is raised to the power p to be used as a regression weight. This function is largely used internally for \code{magnifiedIV()} but it is exported here for use in case you'd like to use it to create your own weights. It is perhaps not as user-friendly as it could be, but it is largely an internal function.
 #'
 #' @param co This is a vector of coefficients unique to one individual, containing only the coefficients that vary across the sample. For example, if the grouped regression model contains \code{z*group}, then \code{co} would be a single value containing an individual's \code{z} effect.
 #' @param excl This is a data frame containing just the variable(s) over which the effects vary. So if the regression model contains \code{z*group}, this would be a data frame containing only \code{z}.
